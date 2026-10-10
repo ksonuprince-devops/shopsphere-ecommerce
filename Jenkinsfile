@@ -14,19 +14,32 @@ pipeline {
             }
         }
 
-        stage('Test') {
-            steps {
-                echo 'Running automated API tests'
+        
+stage('Test') {
+    steps {
+        echo 'Checking files and running automated API tests'
 
-                sh '''
-                    docker run --rm \
-                      -v "$WORKSPACE/backend:/src:ro" \
-                      -w /tmp/app \
-                      node:22-alpine \
-                      sh -c 'cp -R /src/. . && npm ci && npm test'
-                '''
-            }
-        }
+        sh '''
+            docker run --rm \
+              -v "$WORKSPACE/backend:/src:ro" \
+              node:22-alpine \
+              sh -c '
+                echo "=== Files mounted from Jenkins ==="
+                ls -la /src
+                echo "=== Lockfile check ==="
+                test -f /src/package-lock.json || exit 2
+                echo "=== Install and test ==="
+                mkdir -p /tmp/app
+                cp -R /src/. /tmp/app/
+                cd /tmp/app
+                ls -l package.json package-lock.json
+                npm ci
+                npm test
+              '
+        '''
+    }
+}
+
 
         stage('Build Docker Image') {
             steps {
