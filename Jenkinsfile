@@ -69,6 +69,40 @@ stage('Test') {
                 '''
             }
         }
+
+	
+        stage('Deploy') {
+            steps {
+                echo 'Deploying the verified ShopSphere image'
+
+                sh '''
+                    # Remove only the previous ShopSphere container
+                    docker rm -f shopsphere-api 2>/dev/null || true
+
+                    # Deploy the image built by this Jenkins run
+                    docker run -d \
+                      --name shopsphere-api \
+                      --restart unless-stopped \
+                      -p 3001:3001 \
+                      shopsphere-api:${BUILD_NUMBER}
+
+                    # Verify the application inside the container
+                    docker exec shopsphere-api node -e '
+                      fetch("http://127.0.0.1:3001/health")
+                        .then(async r => {
+                          const data = await r.json();
+                          console.log("Health response:", data);
+                          if (!r.ok || data.status !== "UP") process.exit(1);
+                        })
+                        .catch(err => {
+                          console.error(err);
+                          process.exit(1);
+                        });
+                    '
+                '''
+            }
+        }
+
     }
 
     post {
