@@ -74,32 +74,46 @@ stage('Test') {
         stage('Deploy') {
             steps {
                 echo 'Deploying the verified ShopSphere image'
+               sh '''
+    docker rm -f shopsphere-api 2>/dev/null || true
 
-                sh '''
-                    # Remove only the previous ShopSphere container
-                    docker rm -f shopsphere-api 2>/dev/null || true
+    docker run -d \
+      --name shopsphere-api \
+      --restart unless-stopped \
+      -p 3001:3001 \
+      shopsphere-api:${BUILD_NUMBER}
 
-                    # Deploy the image built by this Jenkins run
-                    docker run -d \
-                      --name shopsphere-api \
-                      --restart unless-stopped \
-                      -p 3001:3001 \
-                      shopsphere-api:${BUILD_NUMBER}
+    echo "Waiting for ShopSphere API to become healthy..."
 
-                    # Verify the application inside the container
-                    docker exec shopsphere-api node -e '
-                      fetch("http://127.0.0.1:3001/health")
-                        .then(async r => {
-                          const data = await r.json();
-                          console.log("Health response:", data);
-                          if (!r.ok || data.status !== "UP") process.exit(1);
-                        })
-                        .catch(err => {
-                          console.error(err);
-                          process.exit(1);
-                        });
-                    '
-                '''
+    for i in $(seq 1 15); do
+        if docker exec shopsphere-api node -e '
+            fetch("http://127.0.0.1:3001/health")
+              .then(async r => {
+                const data = await r.json();
+                console.log("Health response:", data);
+                if (!r.ok || data.status !== "UP") process.exit(1);
+              })
+              .catch(() => process.exit(1));
+        '; then
+            echo "ShopSphere deployment verified successfully!"
+            exit 0
+        fi
+
+        if [ "$(docker inspect -f '{{.State.Running}}' shopsphere-api 2>/dev/null)" != "true" ]; then
+            echo "ERROR: ShopSphere container stopped."
+            docker logs shopsphere-api
+            exit 1
+        fi
+
+        echo "Attempt $i/15: API not ready; waiting 2 seconds..."
+        sleep 2
+    done
+
+    echo "ERROR: Health check timed out."
+    docker logs shopsphere-api
+    exit 1
+'''
+
             }
         }
 
