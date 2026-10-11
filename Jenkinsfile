@@ -14,33 +14,36 @@ pipeline {
             }
         }
 
-        
+
 stage('Test') {
     steps {
-        echo 'Checking files and running automated API tests'
+        echo 'Copying source into the test container and running API tests'
 
         sh '''
-            docker run --rm \
-              -v "$WORKSPACE/backend:/src:ro" \
+            tar -C "$WORKSPACE/backend" -cf - . | \
+            docker run --rm -i \
+              --entrypoint sh \
               node:22-alpine \
-              sh -c '
-                echo "=== Files mounted from Jenkins ==="
-                ls -la /src
-                echo "=== Lockfile check ==="
-                test -f /src/package-lock.json || exit 2
-                echo "=== Install and test ==="
+              -c '
+                set -e
                 mkdir -p /tmp/app
-                cp -R /src/. /tmp/app/
+                tar -xf - -C /tmp/app
                 cd /tmp/app
+
+                echo "=== Verify package files ==="
                 ls -l package.json package-lock.json
+
+                echo "=== Install dependencies ==="
                 npm ci
+
+                echo "=== Run API tests ==="
                 npm test
               '
         '''
     }
 }
 
-
+        
         stage('Build Docker Image') {
             steps {
                 echo 'Building ShopSphere Docker image'
